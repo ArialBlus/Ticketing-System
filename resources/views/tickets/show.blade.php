@@ -37,7 +37,7 @@
                         </div>
                     </div>
 
-                    @canany(['editar-todos-tickets', 'editar-tickets-asignado'])
+                    @canany(['editar-todos-tickets', 'editar-ticket-asignado'])
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h5 class="mb-0">Cambiar Estado</h5>
                         <form action="{{ route('tickets.changeStatus', $ticket->id) }}" method="POST" class="d-flex gap-2">

@@ -20,6 +20,7 @@ class TicketController extends Controller
 
     public function index(Request $request)
     {
+        
         $query = Ticket::with('user', 'category', 'status', 'assignedTo')->orderBy('created_at', 'desc');
 
         // Aplicar restricciones según el rol
@@ -68,14 +69,13 @@ class TicketController extends Controller
         ]);
 
         // Buscar un técnico con menos tickets en proceso
-        $technician = User::whereHas('roles', function ($query) {
-            $query->where('name', 'soporte');
-        })
-        ->withCount(['tickets' => function ($query) {
-            $query->where('status_id', 2); // Estado "En Proceso"
-        }])
-        ->orderBy('tickets_count', 'asc')
-        ->first();
+        // llama a la función getAvailableTechnician
+        $technician = $this->getAvailableTechnician();
+        // if ($technician) {
+        //     // Asignar el ticket al técnico encontrado
+        //     $technician->notify(new TicketAssigned($ticket));
+        // }
+
 
         $ticket = Ticket::create([
             'title' => $request->title,
@@ -123,52 +123,88 @@ class TicketController extends Controller
 
     public function update(Request $request, $id)
     {
-        $ticket = Ticket::findOrFail($id);
-        
-        // Verificar permisos
-        if (auth()->user()->hasRole('usuario')) {
-            abort(403, 'No tienes permiso para editar tickets.');
-        }
-        
-        if (auth()->user()->hasRole('soporte')) {
-            if ($ticket->assigned_to !== auth()->id()) {
-                abort(403, 'Solo puedes editar tickets asignados a ti.');
+        try {
+            \Log::info('Iniciando actualización de ticket', ['ticket_id' => $id]);
+            
+            $ticket = Ticket::findOrFail($id);
+            \Log::info('Ticket encontrado', ['ticket_data' => $ticket->toArray()]);
+            
+            // Verificar permisos
+            if (auth()->user()->hasRole('usuario')) {
+                if ($ticket->user_id !== auth()->id()) {
+                    \Log::info('Acceso denegado - Usuario intentando editar ticket de otro');
+                    return redirect()->back()->with('error', 'No tienes permiso para editar este ticket.');
+                }
             }
+            
+            if (auth()->user()->hasRole('soporte') && !auth()->user()->hasRole('admin')) {
+                if ($ticket->assigned_to !== auth()->id()) {
+                    \Log::info('Acceso denegado - Soporte intentando editar ticket no asignado');
+                    return redirect()->back()->with('error', 'Solo puedes editar tickets asignados a ti.');
+                }
+            }
+
+            // Validar los datos
+            \Log::info('Iniciando validación de datos', ['request_data' => $request->all()]);
+            
+            // Si no tiene permiso para gestionar tickets, no validar el status_id
+            $rules = [
+                'title' => 'required|string|max:255',
+                'description' => 'required|string',
+                'category_id' => 'required|exists:categories,id',
+                'priority' => 'required|in:low,medium,high',
+            ];
+
+            if (auth()->user()->can('gestionar tickets')) {
+                $rules['status_id'] = 'required|exists:statuses,id';
+            }
+
+            $validated = $request->validate($rules, [
+                'title.required' => 'El título es obligatorio.',
+                'title.max' => 'El título no puede tener más de 255 caracteres.',
+                'description.required' => 'La descripción es obligatoria.',
+                'category_id.required' => 'Debe seleccionar una categoría.',
+                'category_id.exists' => 'La categoría seleccionada no es válida.',
+                'priority.required' => 'Debe seleccionar una prioridad.',
+                'priority.in' => 'La prioridad seleccionada no es válida.',
+                'status_id.required' => 'Debe seleccionar un estado.',
+                'status_id.exists' => 'El estado seleccionado no es válido.',
+            ]);
+
+            \Log::info('Datos validados correctamente', ['validated_data' => $validated]);
+
+            // Guardar los cambios
+            \Log::info('Intentando actualizar ticket', ['ticket_id' => $id]);
+            
+            // Si no tiene permiso para gestionar tickets, mantener el estado actual
+            if (!auth()->user()->can('gestionar tickets') && !isset($validated['status_id'])) {
+                $validated['status_id'] = $ticket->status_id;
+            }
+
+            $ticket->update($validated);
+            \Log::info('Ticket actualizado exitosamente', ['ticket_data' => $ticket->toArray()]);
+
+            // Si el estado cambió, notificar al usuario
+            if ($ticket->isDirty('status_id')) {
+                \Log::info('Estado cambiado - Enviando notificación', ['old_status' => $ticket->getOriginal('status_id'), 'new_status' => $ticket->status_id]);
+                $ticket->user->notify(new TicketStatusUpdated($ticket));
+            }
+
+            return redirect()->route('tickets.index')
+                ->with('success', 'Ticket actualizado correctamente.');
+
+        } catch (\Exception $e) {
+            \Log::error('Error al actualizar ticket', [
+                'ticket_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Ocurrió un error al actualizar el ticket. Por favor, inténtalo de nuevo.');
         }
-
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'required',
-            'category_id' => 'required|exists:categories,id',
-            'priority' => 'required|in:low,medium,high',
-            'status_id' => 'required|exists:statuses,id',
-        ]);
-
-        // Log request this
-        \Log::info('Updating ticket', ['request' => $request->all()]);
-
-        $oldStatus = $ticket->status_id;
-
-        $ticket->title = $request->title;
-        $ticket->description = $request->description;
-        $ticket->category_id = $request->category_id;
-        $ticket->priority = $request->priority;
-        $ticket->status_id = $request->status_id;
-
-        //modify ticket/ check
-        if ($ticket->save()) {
-            \Log::info('Ticket updated successfully', ['ticket' => $ticket->toArray()]);
-        } else {
-            \Log::error('Failed to update ticket', ['ticket' => $ticket->toArray()]);
-        }
-
-        // Si el estado cambió, notificar al usuario
-        if ($oldStatus != $request->status_id) {
-            $ticket->user->notify(new TicketStatusUpdated($ticket));
-        }
-
-        return redirect()->route('tickets.index')->with('success', 'Ticket actualizado correctamente.')->withInput();
-        //return redirect()->route('tickets.show', $id)->with('success', 'Ticket actualizado correctamente.');
     }
 
     public function changeStatus(Request $request, $id)
@@ -185,15 +221,22 @@ class TicketController extends Controller
         }
 
         // Si el ticket se marca como "En Proceso", asegurarse de que tenga un técnico asignado
+        // y si no tiene, asignar uno automáticamente
         if ($request->status_id == 2 && !$ticket->assigned_to) {
-            return back()->with('error', 'No puedes cambiar a "En Proceso" sin asignar un técnico.');
+            $technician = $this->getAvailableTechnician();
+            if ($technician) {
+                $ticket->assigned_to = $technician->id;
+            } else {
+                return back()->with('error', 'No hay técnicos disponibles para asignar.');
+            }
         }
+
 
         // Actualizar el estado del ticket
         $ticket->update(['status_id' => $request->status_id]);
 
         // Enviar notificación al creador del ticket
-        $ticket->user->notify(new TicketStatusUpdated($ticket));
+        //$ticket->user->notify(new TicketStatusUpdated($ticket));
 
         return redirect()->route('tickets.show', $id)->with('success', 'Estado del ticket actualizado.');
     }
@@ -204,4 +247,19 @@ class TicketController extends Controller
         $ticket->delete();
         return redirect()->route('tickets.index')->with('success', 'Ticket eliminado correctamente.');
     }
+
+
+    // logica del tecnico de soporte para asignar tickets
+    private function getAvailableTechnician()
+    {
+        return User::whereHas('roles', function ($query) {
+            $query->where('name', 'soporte');
+        })
+        ->withCount(['tickets' => function ($query) {
+            $query->where('status_id', 2); // Solo tickets en proceso
+        }])
+        ->orderBy('tickets_count', 'asc')
+        ->first();
+    }
+
 }

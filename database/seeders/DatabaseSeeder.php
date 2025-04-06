@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
         // Crear permisos básicos de tickets
         Permission::firstOrCreate(['name' => 'ver-tickets-propios']);
         Permission::firstOrCreate(['name' => 'ver-todos-tickets']);
+        Permission::firstOrCreate(['name' => 'gestionar tickets']);
         Permission::firstOrCreate(['name' => 'crear-ticket']);
         Permission::firstOrCreate(['name' => 'editar-ticket-asignado']);
         Permission::firstOrCreate(['name' => 'editar-todos-tickets']);
@@ -44,12 +45,14 @@ class DatabaseSeeder extends Seeder
             'crear-ticket',
             'editar-todos-tickets',
             'gestionar-usuarios',
+            'gestionar tickets',
             'asignar-roles'
         ]);
 
         $soporte->givePermissionTo([
             'ver-todos-tickets',
             'crear-ticket',
+            'gestionar tickets',
             'editar-ticket-asignado'
         ]);
 

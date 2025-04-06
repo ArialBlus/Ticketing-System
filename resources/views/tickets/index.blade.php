@@ -89,7 +89,7 @@
                                         <a href="{{ route('tickets.show', $ticket->id) }}" class="btn btn-sm btn-info">
                                             <i class="fas fa-eye"></i>
                                         </a>
-                                        @canany(['editar-tickets-asignado', 'editar-todos-tickets'])
+                                        @canany(['editar-ticket-asignado', 'editar-todos-tickets'])
                                         <a href="{{ route('tickets.edit', $ticket->id) }}" class="btn btn-sm btn-warning ms-2">
                                             <i class="fas fa-edit"></i>
                                         </a>
