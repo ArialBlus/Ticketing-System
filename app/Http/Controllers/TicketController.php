@@ -8,6 +8,8 @@ use App\Models\Category;
 use App\Models\User;
 use App\Models\Status;
 use App\Models\Comment;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 
 use App\Notifications\TicketStatusUpdated;
 
@@ -20,17 +22,17 @@ class TicketController extends Controller
 
     public function index(Request $request)
     {
-        
         $query = Ticket::with('user', 'category', 'status', 'assignedTo')->orderBy('created_at', 'desc');
 
         // Aplicar restricciones según el rol
         if (auth()->user()->hasRole('usuario')) {
             $query->where('user_id', auth()->id());
         } elseif (auth()->user()->hasRole('soporte')) {
-            // Soporte ve todos los tickets
-            $query;
+            // Soporte solo ve los tickets asignados a él
+            $query->where('assigned_to', auth()->id());
         }
         // Admin ve todos los tickets por defecto
+
 
         // Aplicar filtros
         if ($request->filled('status')) {
@@ -92,9 +94,16 @@ class TicketController extends Controller
 
     public function show($id)
     {
-        $ticket = Ticket::with(['user', 'category', 'status', 'comments.user', 'assignedTo'])->findOrFail($id);
-        
+        // Intentar obtener el ticket del caché
+        $cacheKey = 'ticket_' . $id;
+        $ticket = Ticket::with(['user', 'category', 'status', 'assignedTo'])->findOrFail($id);
+
+        $comments = Cache::remember("ticket_{$id}_comments", 300, function () use ($ticket) {
+            return $ticket->comments()->with('user')->get();
+        });
+
         // Verificar permisos
+
         if (auth()->user()->hasRole('usuario') && $ticket->user_id !== auth()->id()) {
             abort(403, 'No tienes permiso para ver este ticket.');
         }
@@ -103,17 +112,23 @@ class TicketController extends Controller
         return view('tickets.show', compact('ticket', 'statuses'));
     }
 
+    //edit method
     public function edit($id)
     {
         $ticket = Ticket::with(['user', 'category', 'status', 'assignedTo'])->findOrFail($id);
         
         // Verificar permisos
-        if (auth()->user()->hasRole('usuario') && !auth()->user()->hasRole('admin')) {
-            abort(403, 'No tienes permiso para editar tickets.');
+        if (auth()->user()->hasRole('usuario') && $ticket->user_id !== auth()->id()) {
+            abort(403, 'No tienes permiso para ver este ticket.');
         }
 
-        if (auth()->user()->hasRole('soporte') && $ticket->assigned_to !== auth()->id() && !auth()->user()->hasRole('admin')) {
-            abort(403, 'Solo puedes editar tickets asignados a ti.');
+        if (auth()->user()->hasRole('soporte') && $ticket->assigned_to !== auth()->id()) {
+            abort(403, 'Solo puedes ver/editar tickets asignados a ti.');
+        }
+
+        // Para usuarios de soporte, solo permitir cambiar a "En Proceso" si está en "Abierto"
+        if (auth()->user()->hasRole('soporte') && $ticket->status_id !== 1) { // 1 = Abierto
+            abort(403, 'Solo puedes cambiar el estado a "En Proceso" si el ticket está en "Abierto".');
         }
 
         $categories = Category::all();
@@ -129,6 +144,9 @@ class TicketController extends Controller
             $ticket = Ticket::findOrFail($id);
             \Log::info('Ticket encontrado', ['ticket_data' => $ticket->toArray()]);
             
+            // Limpiar caché del ticket después de actualizar
+            Cache::forget('ticket_' . $id);
+
             // Verificar permisos
             if (auth()->user()->hasRole('usuario')) {
                 if ($ticket->user_id !== auth()->id()) {
@@ -137,11 +155,14 @@ class TicketController extends Controller
                 }
             }
             
-            if (auth()->user()->hasRole('soporte') && !auth()->user()->hasRole('admin')) {
-                if ($ticket->assigned_to !== auth()->id()) {
-                    \Log::info('Acceso denegado - Soporte intentando editar ticket no asignado');
-                    return redirect()->back()->with('error', 'Solo puedes editar tickets asignados a ti.');
-                }
+            if (auth()->user()->hasRole('soporte') && $ticket->assigned_to !== auth()->id()) {
+                \Log::info('Acceso denegado - Soporte intentando editar ticket no asignado');
+                return redirect()->back()->with('error', 'Solo puedes editar tickets asignados a ti.');
+            }
+
+            // Para usuarios de soporte, solo permitir cambiar a "En Proceso" si está en "Abierto"
+            if (auth()->user()->hasRole('soporte') && isset($request->status_id) && $request->status_id !== 2) { // 2 = En Proceso
+                return redirect()->back()->with('error', 'Solo puedes cambiar el estado a "En Proceso".');
             }
 
             // Validar los datos
@@ -186,8 +207,29 @@ class TicketController extends Controller
 
             // Si el estado cambió, notificar al usuario
             if ($ticket->isDirty('status_id')) {
-                \Log::info('Estado cambiado - Enviando notificación', ['old_status' => $ticket->getOriginal('status_id'), 'new_status' => $ticket->status_id]);
-                $ticket->user->notify(new TicketStatusUpdated($ticket));
+                \Log::info('Estado cambiado - Enviando notificación', [
+                    'old_status' => $ticket->getOriginal('status_id'),
+                    'new_status' => $ticket->status_id,
+                    'user_email' => $ticket->user->email
+                ]);
+
+                try {
+                    $ticket->user->notify(new TicketStatusUpdated($ticket));
+                    \Log::info('Notificación enviada exitosamente', [
+                        'ticket_id' => $ticket->id,
+                        'user_email' => $ticket->user->email
+                    ]);
+                    
+                    session()->flash('success', 'Estado actualizado y notificación enviada al usuario.');
+                } catch (\Exception $e) {
+                    \Log::error('Error enviando notificación', [
+                        'ticket_id' => $ticket->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    
+                    session()->flash('warning', 'Estado actualizado, pero hubo un error al enviar la notificación.');
+                }
             }
 
             return redirect()->route('tickets.index')
@@ -200,10 +242,7 @@ class TicketController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'request_data' => $request->all()
             ]);
-
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Ocurrió un error al actualizar el ticket. Por favor, inténtalo de nuevo.');
+            return redirect()->back()->with('error', 'Error al actualizar el ticket. Por favor, intenta nuevamente.');
         }
     }
 
@@ -236,7 +275,19 @@ class TicketController extends Controller
         $ticket->update(['status_id' => $request->status_id]);
 
         // Enviar notificación al creador del ticket
-        //$ticket->user->notify(new TicketStatusUpdated($ticket));
+        try {
+            $ticket->user->notify(new TicketStatusUpdated($ticket));
+            \Log::info('Notificación enviada exitosamente', [
+                'ticket_id' => $ticket->id,
+                'user_email' => $ticket->user->email
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error enviando notificación', [
+                'ticket_id' => $ticket->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
 
         return redirect()->route('tickets.show', $id)->with('success', 'Estado del ticket actualizado.');
     }

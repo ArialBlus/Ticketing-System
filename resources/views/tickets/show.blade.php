@@ -62,7 +62,7 @@
             <!-- Sección de Comentarios -->
             <div class="card shadow">
                 <div class="card-body">
-                    <h4 class="card-title mb-4">Comentarios</h4>
+                    <h4 class="card-title mb-4">Comentarios ({{ $ticket->comments->count() }})</h4>
 
                     <div class="comments-section mb-4">
                         @forelse ($ticket->comments as $comment)
@@ -76,7 +76,7 @@
                                     <div class="flex-grow-1 ms-3">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <h6 class="mb-0">{{ $comment->user->name }}</h6>
-                                            <small class="text-muted">{{ $comment->created_at->diffForHumans() }}</small>
+                                            <small class="text-muted">{{ $comment->created_at->format('d/m/Y H:i') }}</small>
                                         </div>
                                         <p class="mb-0 mt-2">{{ $comment->message }}</p>
                                     </div>
@@ -101,16 +101,12 @@
                             <textarea name="message" id="message" class="form-control @error('message') is-invalid @enderror" 
                                       rows="3" required></textarea>
                             @error('message')
-                                <div class="invalid-feedback">
-                                    {{ $message }}
-                                </div>
+                                <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
-                        <div class="text-end">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-paper-plane me-1"></i>Enviar Comentario
-                            </button>
-                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-paper-plane me-1"></i>Enviar comentario
+                        </button>
                     </form>
                 </div>
             </div>

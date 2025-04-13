@@ -11,6 +11,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Livewire Styles -->
+    @livewireStyles
+
     <!-- Custom CSS -->
     <style>
         /* Sidebar Styling */
@@ -25,12 +29,13 @@
             overflow-y: auto;
             transition: transform 0.3s ease-in-out;
         }
-        
+
         .sidebar .nav-link {
             color: rgba(255,255,255,.8);
             padding: .8rem 1rem;
             border-radius: .25rem;
         }
+
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
             color: #fff;
@@ -89,8 +94,8 @@
                     <div class="collapse navbar-collapse" id="navbarNav">
                         <ul class="navbar-nav ms-auto">
                             <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                    {{ Auth::user()->name }}
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-user me-2"></i>{{ Auth::user()->name }}
                                 </a>
                                 <ul class="dropdown-menu dropdown-menu-end">
                                     <li>
@@ -100,7 +105,7 @@
                                     </li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li>
-                                        <form method="POST" action="{{ route('logout') }}">
+                                        <form method="POST" action="{{ route('logout') }}" class="d-inline">
                                             @csrf
                                             <button type="submit" class="dropdown-item">
                                                 <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión
@@ -138,6 +143,18 @@
     <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Livewire Scripts -->
+    @livewireScripts
+
+    <!-- Stack de scripts -->
+    @stack('scripts')
+
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             const sidebar = document.getElementById("sidebar");
@@ -146,12 +163,17 @@
             sidebarToggle.addEventListener("click", function () {
                 sidebar.classList.toggle("show");
             });
-            // cerrar el sidebar cuando se haga clikc fuera de el
+
+            // cerrar el sidebar cuando se haga click fuera de él
             document.addEventListener("click", function (event) {
                 if (!sidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
                     sidebar.classList.remove("show");
                 }
             });
+        });
+
+        Livewire.on('refresh', () => {
+            location.reload();
         });
     </script>
 

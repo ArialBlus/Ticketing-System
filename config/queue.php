@@ -71,6 +71,15 @@ return [
             'after_commit' => false,
         ],
 
+        'notifications' => [
+            'driver' => 'sync',
+            'connection' => 'default',
+            'queue' => env('NOTIFICATIONS_QUEUE', 'default'),
+            'retry_after' => 90,
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
     ],
 
     /*

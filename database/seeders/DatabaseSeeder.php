@@ -21,6 +21,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call([
+            StatusSeeder::class,
+        ]);
+
         // Crear roles
         $admin = Role::firstOrCreate(['name' => 'admin']);
         $soporte = Role::firstOrCreate(['name' => 'soporte']);

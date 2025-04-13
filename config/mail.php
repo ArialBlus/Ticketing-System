@@ -37,13 +37,34 @@ return [
         'smtp' => [
             'transport' => 'smtp',
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', 'smtp.mailgun.org'),
+            'host' => env('MAIL_HOST', 'smtp.gmail.com'),
             'port' => env('MAIL_PORT', 587),
             'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => 30,
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
+            'stream' => [
+                'ssl' => [
+                    'allow_self_signed' => true,
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                ],
+            ],
+            'options' => [
+                'debug' => env('MAIL_DEBUG', true),
+                'auth' => [
+                    'mechanism' => 'XOAUTH2',
+                ],
+                'headers' => [
+                    'X-Mailer' => 'Laravel',
+                    'X-Priority' => '3',
+                    'X-MSMail-Priority' => 'Normal',
+                    'Importance' => 'Normal',
+                    'Precedence' => 'bulk',
+                    'Auto-Submitted' => 'auto-generated',
+                ],
+            ],
         ],
 
         'ses' => [

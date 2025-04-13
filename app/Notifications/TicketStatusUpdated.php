@@ -33,12 +33,38 @@ class TicketStatusUpdated extends Notification implements ShouldQueue
      */
     public function toMail($notifiable)
     {
-        return (new MailMessage)
-            ->subject('Estado de tu ticket actualizado')
-            ->greeting('Hola, ' . $notifiable->name)
-            ->line('Tu ticket **"' . $this->ticket->title . '"** ha cambiado de estado a **' . $this->ticket->status->name . '**.')
-            ->action('Ver Ticket', url('/tickets/' . $this->ticket->id))
-            ->line('Gracias por utilizar nuestro sistema.');
+        \Log::info('Configurando mensaje de correo', [
+            'to' => $notifiable->email,
+            'subject' => 'Estado de tu ticket actualizado',
+            'ticket_id' => $this->ticket->id,
+            'ticket_title' => $this->ticket->title,
+            'new_status' => $this->ticket->status->name
+        ]);
+
+        try {
+            $message = (new MailMessage)
+                ->subject('Estado de tu ticket actualizado')
+                ->greeting('Hola, ' . $notifiable->name)
+                ->line('Tu ticket "' . $this->ticket->title . '" ha cambiado de estado a ' . $this->ticket->status->name . '.')
+                ->action('Ver Ticket', url('/tickets/' . $this->ticket->id))
+                ->line('Gracias por utilizar nuestro sistema.')
+                ->line('Este es un correo automático, por favor no responder.');
+
+            \Log::info('Mensaje de correo configurado exitosamente', [
+                'ticket_id' => $this->ticket->id,
+                'user_email' => $notifiable->email
+            ]);
+
+            return $message;
+        } catch (\Exception $e) {
+            \Log::error('Error al configurar el mensaje de correo', [
+                'ticket_id' => $this->ticket->id,
+                'user_email' => $notifiable->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e; // Propagar el error
+        }
     }
 
     /**
@@ -46,6 +72,12 @@ class TicketStatusUpdated extends Notification implements ShouldQueue
      */
     public function toDatabase($notifiable)
     {
+        \Log::info('Guardando notificación en base de datos', [
+            'user_id' => $notifiable->id,
+            'ticket_id' => $this->ticket->id,
+            'new_status' => $this->ticket->status->name
+        ]);
+
         return [
             'ticket_id' => $this->ticket->id,
             'title' => $this->ticket->title,
@@ -59,6 +91,12 @@ class TicketStatusUpdated extends Notification implements ShouldQueue
      */
     public function toBroadcast($notifiable)
     {
+        \Log::info('Enviando notificación por broadcast', [
+            'user_id' => $notifiable->id,
+            'ticket_id' => $this->ticket->id,
+            'new_status' => $this->ticket->status->name
+        ]);
+
         return new BroadcastMessage([
             'ticket_id' => $this->ticket->id,
             'title' => $this->ticket->title,
